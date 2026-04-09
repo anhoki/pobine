@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
+import matplotlib.pyplot as plt
+import altair as alt
 
 # Configuración de la página
 st.set_page_config(page_title="Dashboard Demográfico", layout="wide")
@@ -10,8 +10,6 @@ st.title("📊 Dashboard de Población por Departamento y Municipio")
 # Cargar datos
 @st.cache_data
 def cargar_datos():
-    # Aquí puedes cambiar la fuente: CSV, Excel, o pegar datos
-    # Opción 1: Desde archivo subido
     uploaded_file = st.sidebar.file_uploader("Cargar archivo (CSV o Excel)", type=["csv", "xlsx"])
     
     if uploaded_file is not None:
@@ -21,40 +19,31 @@ def cargar_datos():
             df = pd.read_excel(uploaded_file)
         return df
     else:
-        # Datos de ejemplo (reemplázalos con tus datos reales)
-        st.sidebar.warning("Usando datos de ejemplo. Sube tu archivo.")
-        return crear_datos_ejemplo()
-
-def crear_datos_ejemplo():
-    # Función para generar datos demo (solo para probar)
-    data = {
-        'Departamento': ['Dept A', 'Dept A', 'Dept B', 'Dept B'],
-        'Municipio': ['Mun 1', 'Mun 2', 'Mun 3', 'Mun 4'],
-        'Total': [10000, 15000, 20000, 12000],
-        'Mujeres': [5200, 7800, 10500, 6300],
-        'Hombres': [4800, 7200, 9500, 5700],
-        'Total <1': [200, 300, 400, 250],
-        'Total 65+': [800, 1200, 1500, 900]
-    }
-    return pd.DataFrame(data)
+        st.sidebar.warning("⚠️ Por favor, sube tu archivo de datos")
+        # Datos de ejemplo
+        data = {
+            'Departamento': ['Ejemplo A', 'Ejemplo B'],
+            'Municipio': ['Municipio 1', 'Municipio 2'],
+            'Total': [10000, 15000],
+            'Mujeres': [5200, 7800],
+            'Hombres': [4800, 7200],
+        }
+        return pd.DataFrame(data)
 
 df = cargar_datos()
 
-if df is not None:
+if df is not None and len(df) > 0:
     # Sidebar - Filtros
     st.sidebar.header("🔍 Filtros")
     
-    # Filtro por departamento
     deptos = ['Todos'] + sorted(df['Departamento'].unique().tolist())
     depto_seleccionado = st.sidebar.selectbox("Departamento", deptos)
     
-    # Filtrar datos
     if depto_seleccionado != 'Todos':
         df_filtrado = df[df['Departamento'] == depto_seleccionado]
     else:
         df_filtrado = df.copy()
     
-    # Filtro por municipio
     municipios = ['Todos'] + sorted(df_filtrado['Municipio'].unique().tolist())
     municipio_seleccionado = st.sidebar.selectbox("Municipio", municipios)
     
@@ -70,104 +59,99 @@ if df is not None:
     with col3:
         st.metric("Total Hombres", f"{df_filtrado['Hombres'].sum():,}")
     with col4:
-        porcentaje_mujeres = (df_filtrado['Mujeres'].sum() / df_filtrado['Total'].sum()) * 100
-        st.metric("% Mujeres", f"{porcentaje_mujeres:.1f}%")
-    
-    # Gráficos principales
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # Gráfico de barras por municipio
-        fig_bar = px.bar(
-            df_filtrado, 
-            x='Municipio', 
-            y=['Mujeres', 'Hombres'],
-            title="Población por Municipio",
-            barmode='group'
-        )
-        st.plotly_chart(fig_bar, use_container_width=True)
-    
-    with col2:
-        # Gráfico de pastel departamental
-        if depto_seleccionado == 'Todos':
-            datos_pastel = df_filtrado.groupby('Departamento')['Total'].sum().reset_index()
-            fig_pie = px.pie(
-                datos_pastel, 
-                values='Total', 
-                names='Departamento',
-                title="Distribución por Departamento"
-            )
-            st.plotly_chart(fig_pie, use_container_width=True)
+        if df_filtrado['Total'].sum() > 0:
+            porcentaje_mujeres = (df_filtrado['Mujeres'].sum() / df_filtrado['Total'].sum()) * 100
+            st.metric("% Mujeres", f"{porcentaje_mujeres:.1f}%")
         else:
-            # Si hay un departamento seleccionado, mostrar distribución municipal
-            fig_pie = px.pie(
-                df_filtrado, 
-                values='Total', 
-                names='Municipio',
-                title=f"Distribución en {depto_seleccionado}"
-            )
-            st.plotly_chart(fig_pie, use_container_width=True)
+            st.metric("% Mujeres", "0%")
+    
+    # Gráfico con Altair (ya viene con Streamlit)
+    st.subheader("📊 Comparativa por Municipio")
+    
+    # Preparar datos para gráfico
+    df_melted = df_filtrado.melt(
+        id_vars=['Municipio'], 
+        value_vars=['Mujeres', 'Hombres'],
+        var_name='Género', 
+        value_name='Cantidad'
+    )
+    
+    chart = alt.Chart(df_melted).mark_bar().encode(
+        x=alt.X('Municipio:N', title='Municipio'),
+        y=alt.Y('Cantidad:Q', title='Población'),
+        color='Género:N',
+        tooltip=['Municipio', 'Género', 'Cantidad']
+    ).properties(
+        height=400
+    )
+    
+    st.altair_chart(chart, use_container_width=True)
+    
+    # Gráfico de distribución
+    st.subheader("🥧 Distribución por Departamento")
+    
+    if depto_seleccionado == 'Todos':
+        df_departamentos = df_filtrado.groupby('Departamento')['Total'].sum().reset_index()
+        chart_pie = alt.Chart(df_departamentos).mark_arc().encode(
+            theta=alt.Theta(field="Total", type="quantitative"),
+            color=alt.Color(field="Departamento", type="nominal"),
+            tooltip=['Departamento', 'Total']
+        ).properties(
+            height=400
+        )
+        st.altair_chart(chart_pie, use_container_width=True)
+    else:
+        df_municipios = df_filtrado.groupby('Municipio')['Total'].sum().reset_index()
+        chart_pie = alt.Chart(df_municipios).mark_arc().encode(
+            theta=alt.Theta(field="Total", type="quantitative"),
+            color=alt.Color(field="Municipio", type="nominal"),
+            tooltip=['Municipio', 'Total']
+        ).properties(
+            height=400
+        )
+        st.altair_chart(chart_pie, use_container_width=True)
     
     # Tabla de datos
     st.subheader("📋 Datos Detallados")
     st.dataframe(df_filtrado, use_container_width=True)
     
-    # Análisis por grupos de edad (si las columnas existen)
-    columnas_edad = [col for col in df.columns if 'Total' in col and any(str(i) in col for i in range(0, 100))]
+    # Gráfico de líneas por grupos de edad (si existen columnas de edad)
+    columnas_edad = [col for col in df.columns if 'Total' in col and ('<' in col or '-' in col)]
     
     if columnas_edad:
         st.subheader("👥 Distribución por Grupos de Edad")
         
-        # Preparar datos para pirámide poblacional
-        edades = []
-        mujeres = []
-        hombres = []
+        # Preparar datos para gráfico de líneas
+        edad_data = []
+        for col in columnas_edad:
+            edad_data.append({
+                'Grupo de Edad': col.replace('Total ', ''),
+                'Población': df_filtrado[col].sum()
+            })
         
-        for col in df_filtrado.columns:
-            if 'Mujeres' in col and any(str(i) in col for i in range(0, 100)):
-                grupo = col.replace('Mujeres ', '')
-                edades.append(grupo)
-                mujeres.append(df_filtrado[col].sum())
-            elif 'Hombres' in col and any(str(i) in col for i in range(0, 100)):
-                grupo = col.replace('Hombres ', '')
-                # Buscar el índice correspondiente
-                if grupo in edades:
-                    idx = edades.index(grupo)
-                    hombres.append(df_filtrado[col].sum())
+        df_edad = pd.DataFrame(edad_data)
         
-        if edades and mujeres and hombres:
-            # Pirámide poblacional
-            fig_piramide = go.Figure()
-            fig_piramide.add_trace(go.Bar(
-                y=edades,
-                x=[-x for x in mujeres],
-                name='Mujeres',
-                orientation='h',
-                marker_color='pink'
-            ))
-            fig_piramide.add_trace(go.Bar(
-                y=edades,
-                x=hombres,
-                name='Hombres',
-                orientation='h',
-                marker_color='lightblue'
-            ))
-            
-            fig_piramide.update_layout(
-                title="Pirámide Poblacional",
-                barmode='relative',
-                xaxis_title="Cantidad",
-                yaxis_title="Grupo de Edad"
-            )
-            st.plotly_chart(fig_piramide, use_container_width=True)
+        chart_edad = alt.Chart(df_edad).mark_line(point=True).encode(
+            x=alt.X('Grupo de Edad:N', title='Grupo de Edad', sort=None),
+            y=alt.Y('Población:Q', title='Población'),
+            tooltip=['Grupo de Edad', 'Población']
+        ).properties(
+            height=400
+        )
+        
+        st.altair_chart(chart_edad, use_container_width=True)
     
-    # Exportar datos filtrados
+    # Exportar datos
+    csv = df_filtrado.to_csv(index=False)
     st.sidebar.download_button(
         label="📥 Descargar datos filtrados (CSV)",
-        data=df_filtrado.to_csv(index=False),
+        data=csv,
         file_name="datos_filtrados.csv",
         mime="text/csv"
     )
+    
+    # Mostrar información del archivo
+    st.sidebar.info(f"📊 {len(df_filtrado)} registros mostrados")
 
 else:
-    st.error("No se pudieron cargar los datos")
+    st.error("No se pudieron cargar los datos. Por favor, verifica el formato del archivo.")
