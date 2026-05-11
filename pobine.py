@@ -1,7 +1,5 @@
 import streamlit as st
 import pandas as pd
-import altair as alt
-import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="Dashboard Poblacional", layout="wide")
 
@@ -28,7 +26,6 @@ if uploaded_file is not None:
             df_filtrado = df
             titulo = "Todos los Municipios"
         
-        # Filtro por departamento si existe
         if 'Departamento' in df.columns and municipio_seleccionado == 'Todos':
             deptos = ['Todos'] + sorted(df['Departamento'].unique().tolist())
             depto_seleccionado = st.sidebar.selectbox("Departamento", deptos)
@@ -92,46 +89,20 @@ if uploaded_file is not None:
             use_container_width=True
         )
         
-        # Gráfico de barras con Altair
-        chart = alt.Chart(df_edades).mark_bar().encode(
-            x=alt.X('Grupo Etario:N', sort=None, title='Grupo de Edad'),
-            y=alt.Y('Total:Q', title='Población'),
-            tooltip=['Grupo Etario', 'Total']
-        ).properties(
-            height=400
-        )
-        st.altair_chart(chart, use_container_width=True)
+        # Gráfico de barras nativo de Streamlit
+        st.subheader("📈 Población por Grupo de Edad")
+        st.bar_chart(df_edades.set_index('Grupo Etario')['Total'])
+        
+        # Gráfico de área para comparación por sexo
+        st.subheader("👥 Comparación por Sexo y Edad")
+        df_comparacion = df_edades.set_index('Grupo Etario')[['Mujeres', 'Hombres']]
+        st.bar_chart(df_comparacion)
     
     st.markdown("---")
     
-    # Pirámide poblacional con matplotlib
-    st.subheader("👥 Pirámide Poblacional")
-    
-    if tabla_data:
-        fig, ax = plt.subplots(figsize=(10, 8))
-        
-        grupos = [d['Grupo Etario'] for d in tabla_data]
-        mujeres = [-d['Mujeres'] for d in tabla_data]
-        hombres = [d['Hombres'] for d in tabla_data]
-        
-        ax.barh(grupos, mujeres, color='#FF6B6B', label='Mujeres')
-        ax.barh(grupos, hombres, color='#4ECDC4', label='Hombres')
-        
-        ax.set_xlabel('Cantidad de Personas')
-        ax.set_ylabel('Grupo de Edad')
-        ax.set_title('Distribución por Edad y Sexo')
-        ax.legend()
-        
-        # Formatear eje X
-        ax.set_xlim(-max(hombres + [abs(x) for x in mujeres]) * 1.1, 
-                    max(hombres + [abs(x) for x in mujeres]) * 1.1)
-        
-        st.pyplot(fig)
-    
-    # Tabla por municipio
+    # Tabla por municipio si hay más de uno
     if 'Municipio' in df.columns and len(df_filtrado['Municipio'].unique()) > 1:
         st.subheader("📋 Resumen por Municipio")
-        
         resumen = df_filtrado.groupby('Municipio').agg({
             'Total': 'sum',
             'Mujeres': 'sum',
@@ -142,15 +113,27 @@ if uploaded_file is not None:
             resumen['% Mujeres'] = (resumen['Mujeres'] / resumen['Total'] * 100).round(1)
         
         st.dataframe(resumen, use_container_width=True)
+        
+        # Gráfico de barras por municipio
+        st.subheader("Población por Municipio")
+        st.bar_chart(resumen.set_index('Municipio')['Total'])
     
-    # Download
+    # Descarga de datos
     csv = df_filtrado.to_csv(index=False)
     st.sidebar.download_button(
-        label="📥 Descargar datos",
+        label="📥 Descargar datos filtrados (CSV)",
         data=csv,
-        file_name="datos_filtrados.csv",
+        file_name=f"datos_{titulo}.csv",
         mime="text/csv"
     )
+    
+    # Información en sidebar
+    st.sidebar.info(f"""
+    ### 📊 Estadísticas
+    - **Municipios:** {df_filtrado['Municipio'].nunique() if 'Municipio' in df_filtrado.columns else 1}
+    - **Total registros:** {len(df_filtrado)}
+    - **Población total:** {total_poblacion:,.0f}
+    """)
 
 else:
     st.info("""
@@ -163,4 +146,6 @@ else:
     - `Hombres` (total hombres)
     - `Total <1`, `Total 1-4`, etc.
     - `Mujeres <1`, `Hombres <1`, etc.
+    
+    **Puedes usar el botón "Browse files" para subir tu archivo.**
     """)
